@@ -5,11 +5,6 @@ const selectedPaths = new Set();
 let currentScanResults = [];
 let currentPkgMode = 'project'; // 'project' | 'global'
 
-// === State ===
-const selectedPaths = new Set();
-let currentScanResults = [];
-let currentPkgMode = 'project'; // 'project' | 'global'
-
 // === HTML Escape (prevents XSS in innerHTML) ===
 function esc(str) {
   if (str == null) return '';

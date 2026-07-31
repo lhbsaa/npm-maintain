@@ -1,0 +1,5 @@
+
+  pkg-maintain is running at http://127.0.0.1:3995
+  Target directory: G:\My-peo\npm-maintain
+  Press Ctrl+C to stop
+

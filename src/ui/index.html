@@ -14,7 +14,7 @@
     </header>
 
     <nav class="tabs">
-      <button class="tab active" data-tab="packages">包管�?/button>
+      <button class="tab active" data-tab="packages">包管理</button>
       <button class="tab" data-tab="cache">缓存管理</button>
       <button class="tab" data-tab="cleanup">垃圾清理</button>
       <button class="tab" data-tab="health">依赖健康</button>
@@ -26,7 +26,7 @@
         <div class="toolbar">
           <div class="toggle-group">
             <button class="toggle-btn active" id="pkg-mode-project" data-mode="project">项目依赖</button>
-            <button class="toggle-btn" id="pkg-mode-global" data-mode="global">全局�?/button>
+            <button class="toggle-btn" id="pkg-mode-global" data-mode="global">全局包</button>
           </div>
           <input type="text" id="pkg-search" placeholder="搜索 npm 包名..." class="input">
           <button id="pkg-search-btn" class="btn btn-primary">搜索</button>
@@ -36,7 +36,7 @@
         <!-- Project deps table -->
         <table class="data-table" id="pkg-project-table">
           <thead>
-            <tr><th>包名</th><th>当前版本</th><th>需求版�?/th><th>类型</th><th>操作</th></tr>
+            <tr><th>包名</th><th>当前版本</th><th>需求版本</th><th>类型</th><th>操作</th></tr>
           </thead>
           <tbody id="pkg-tbody">
             <tr><td colspan="5" class="text-muted">Loading...</td></tr>
@@ -60,7 +60,7 @@
       <div id="tab-cache" class="tab-content">
         <div class="toolbar">
           <button id="cache-refresh-btn" class="btn">刷新</button>
-          <button id="globals-load-btn" class="btn">查看全局�?/button>
+          <button id="globals-load-btn" class="btn">查看全局包</button>
         </div>
         <div id="cache-info-container"></div>
         <div id="globals-container"></div>
@@ -69,19 +69,19 @@
       <!-- Tab 3: Cleanup -->
       <div id="tab-cleanup" class="tab-content">
         <div class="toolbar">
-          <input type="text" id="scan-dir" placeholder="扫描根目�?(默认用户目录)" class="input">
+          <input type="text" id="scan-dir" placeholder="扫描根目录 (默认用户目录)" class="input">
           <button id="scan-btn" class="btn btn-primary">扫描 node_modules</button>
           <button id="disk-usage-btn" class="btn">缓存占用</button>
         </div>
         <div id="cleanup-summary" class="summary-bar"></div>
         <div class="toolbar" style="margin-top:8px;">
-          <label><input type="checkbox" id="cleanup-select-all"> 全�?/label>
-          <button id="select-all-btn" class="btn btn-sm">反�?/button>
+          <label><input type="checkbox" id="cleanup-select-all"> 全选</label>
+          <button id="select-all-btn" class="btn btn-sm">反选</button>
           <button id="delete-selected-btn" class="btn btn-danger">删除选中</button>
         </div>
         <table class="data-table">
           <thead>
-            <tr><th class="col-check"></th><th>路径</th><th>大小</th><th>最后修�?/th><th>类型</th><th>操作</th></tr>
+            <tr><th class="col-check"></th><th>路径</th><th>大小</th><th>最后修改</th><th>类型</th><th>操作</th></tr>
           </thead>
           <tbody id="cleanup-tbody"></tbody>
         </table>
@@ -90,36 +90,36 @@
       <!-- Tab 4: Health -->
       <div id="tab-health" class="tab-content">
         <div class="toolbar">
-          <button id="health-check-btn" class="btn btn-primary">一键检�?/button>
+          <button id="health-check-btn" class="btn btn-primary">一键检查</button>
           <button id="health-dedupe-btn" class="btn">去重 (dedupe)</button>
           <button id="health-prune-btn" class="btn">清理 (prune)</button>
         </div>
 
         <div class="health-grid">
           <div class="health-card">
-            <h3>过时�?/h3>
+            <h3>过时包</h3>
             <table class="data-table compact">
-              <thead><tr><th>包名</th><th>当前</th><th>需�?/th><th>最�?/th><th></th></tr></thead>
-              <tbody id="outdated-tbody"><tr><td colspan="5" class="text-muted">点击"一键检�?</td></tr></tbody>
+              <thead><tr><th>包名</th><th>当前</th><th>需求</th><th>最新</th><th></th></tr></thead>
+              <tbody id="outdated-tbody"><tr><td colspan="5" class="text-muted">点击"一键检查"</td></tr></tbody>
             </table>
           </div>
 
           <div class="health-card">
-            <h3>重复�?/h3>
-            <div id="duplicates-container" class="text-muted">点击"一键检�?</div>
+            <h3>重复包</h3>
+            <div id="duplicates-container" class="text-muted">点击"一键检查"</div>
           </div>
 
           <div class="health-card">
-            <h3>未使用依�?/h3>
+            <h3>未使用依赖</h3>
             <table class="data-table compact">
               <thead><tr><th>包名</th><th>类型</th><th></th></tr></thead>
-              <tbody id="unused-tbody"><tr><td colspan="3" class="text-muted">点击"一键检�?</td></tr></tbody>
+              <tbody id="unused-tbody"><tr><td colspan="3" class="text-muted">点击"一键检查"</td></tr></tbody>
             </table>
           </div>
 
           <div class="health-card">
-            <h3>依赖�?/h3>
-            <div id="tree-container" class="text-muted tree-view">点击"一键检�?</div>
+            <h3>依赖树</h3>
+            <div id="tree-container" class="text-muted tree-view">点击"一键检查"</div>
           </div>
         </div>
       </div>
