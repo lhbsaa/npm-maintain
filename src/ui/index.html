@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>pkg-maintain</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app">
+    <header class="header">
+      <h1>pkg-maintain</h1>
+      <div id="status-bar" class="status-bar">Loading...</div>
+    </header>
+
+    <nav class="tabs">
+      <button class="tab active" data-tab="packages">包管�?/button>
+      <button class="tab" data-tab="cache">缓存管理</button>
+      <button class="tab" data-tab="cleanup">垃圾清理</button>
+      <button class="tab" data-tab="health">依赖健康</button>
+    </nav>
+
+    <main class="content">
+      <!-- Tab 1: Packages -->
+      <div id="tab-packages" class="tab-content active">
+        <div class="toolbar">
+          <div class="toggle-group">
+            <button class="toggle-btn active" id="pkg-mode-project" data-mode="project">项目依赖</button>
+            <button class="toggle-btn" id="pkg-mode-global" data-mode="global">全局�?/button>
+          </div>
+          <input type="text" id="pkg-search" placeholder="搜索 npm 包名..." class="input">
+          <button id="pkg-search-btn" class="btn btn-primary">搜索</button>
+          <button id="pkg-refresh-btn" class="btn">刷新列表</button>
+        </div>
+        <div id="pkg-search-results" class="search-results"></div>
+        <!-- Project deps table -->
+        <table class="data-table" id="pkg-project-table">
+          <thead>
+            <tr><th>包名</th><th>当前版本</th><th>需求版�?/th><th>类型</th><th>操作</th></tr>
+          </thead>
+          <tbody id="pkg-tbody">
+            <tr><td colspan="5" class="text-muted">Loading...</td></tr>
+          </tbody>
+        </table>
+        <!-- Global packages table (hidden by default) -->
+        <div id="pkg-global-container" class="hidden">
+          <div id="pkg-global-summary" class="summary-bar"></div>
+          <table class="data-table" id="pkg-global-table">
+            <thead>
+              <tr><th>包名</th><th>版本</th><th>来源</th><th>操作</th></tr>
+            </thead>
+            <tbody id="pkg-global-tbody">
+              <tr><td colspan="4" class="text-muted">Loading...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Tab 2: Cache -->
+      <div id="tab-cache" class="tab-content">
+        <div class="toolbar">
+          <button id="cache-refresh-btn" class="btn">刷新</button>
+          <button id="globals-load-btn" class="btn">查看全局�?/button>
+        </div>
+        <div id="cache-info-container"></div>
+        <div id="globals-container"></div>
+      </div>
+
+      <!-- Tab 3: Cleanup -->
+      <div id="tab-cleanup" class="tab-content">
+        <div class="toolbar">
+          <input type="text" id="scan-dir" placeholder="扫描根目�?(默认用户目录)" class="input">
+          <button id="scan-btn" class="btn btn-primary">扫描 node_modules</button>
+          <button id="disk-usage-btn" class="btn">缓存占用</button>
+        </div>
+        <div id="cleanup-summary" class="summary-bar"></div>
+        <div class="toolbar" style="margin-top:8px;">
+          <label><input type="checkbox" id="cleanup-select-all"> 全�?/label>
+          <button id="select-all-btn" class="btn btn-sm">反�?/button>
+          <button id="delete-selected-btn" class="btn btn-danger">删除选中</button>
+        </div>
+        <table class="data-table">
+          <thead>
+            <tr><th class="col-check"></th><th>路径</th><th>大小</th><th>最后修�?/th><th>类型</th><th>操作</th></tr>
+          </thead>
+          <tbody id="cleanup-tbody"></tbody>
+        </table>
+      </div>
+
+      <!-- Tab 4: Health -->
+      <div id="tab-health" class="tab-content">
+        <div class="toolbar">
+          <button id="health-check-btn" class="btn btn-primary">一键检�?/button>
+          <button id="health-dedupe-btn" class="btn">去重 (dedupe)</button>
+          <button id="health-prune-btn" class="btn">清理 (prune)</button>
+        </div>
+
+        <div class="health-grid">
+          <div class="health-card">
+            <h3>过时�?/h3>
+            <table class="data-table compact">
+              <thead><tr><th>包名</th><th>当前</th><th>需�?/th><th>最�?/th><th></th></tr></thead>
+              <tbody id="outdated-tbody"><tr><td colspan="5" class="text-muted">点击"一键检�?</td></tr></tbody>
+            </table>
+          </div>
+
+          <div class="health-card">
+            <h3>重复�?/h3>
+            <div id="duplicates-container" class="text-muted">点击"一键检�?</div>
+          </div>
+
+          <div class="health-card">
+            <h3>未使用依�?/h3>
+            <table class="data-table compact">
+              <thead><tr><th>包名</th><th>类型</th><th></th></tr></thead>
+              <tbody id="unused-tbody"><tr><td colspan="3" class="text-muted">点击"一键检�?</td></tr></tbody>
+            </table>
+          </div>
+
+          <div class="health-card">
+            <h3>依赖�?/h3>
+            <div id="tree-container" class="text-muted tree-view">点击"一键检�?</div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- Modal -->
+  <div id="modal" class="modal hidden">
+    <div class="modal-backdrop" onclick="closeModal()"></div>
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 id="modal-title"></h2>
+        <button class="modal-close" onclick="closeModal()">&times;</button>
+      </div>
+      <div id="modal-body" class="modal-body"></div>
+      <div class="modal-footer">
+        <button class="btn" onclick="closeModal()">取消</button>
+        <button id="modal-confirm-btn" class="btn btn-danger">确认</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
