@@ -1,23 +1,24 @@
-import { readdirSync, statSync, readFileSync } from 'fs';
+import { readdir, stat } from 'fs/promises';
 import { join } from 'path';
 
 /**
  * Recursively calculate the total size of a directory.
- * Uses sync fs for simplicity in a local tool.
+ * Uses async fs to avoid blocking the event loop on large trees.
+ * Dirent typing (withFileTypes) skips symlinks, so symlink loops cannot recurse.
  * @param {string} dirPath
- * @returns {number} size in bytes
+ * @returns {Promise<number>} size in bytes
  */
-export function dirSize(dirPath) {
+export async function dirSize(dirPath) {
   let totalSize = 0;
   try {
-    const entries = readdirSync(dirPath, { withFileTypes: true });
+    const entries = await readdir(dirPath, { withFileTypes: true });
     for (const entry of entries) {
       const fullPath = join(dirPath, entry.name);
       try {
         if (entry.isDirectory()) {
-          totalSize += dirSize(fullPath);
+          totalSize += await dirSize(fullPath);
         } else if (entry.isFile()) {
-          totalSize += statSync(fullPath).size;
+          totalSize += (await stat(fullPath)).size;
         }
       } catch {
         // Skip inaccessible files
@@ -53,12 +54,12 @@ export async function scanNodeModules(rootDir, options = {}) {
     ...excludeDirs,
   ]);
 
-  function walk(dir, depth) {
+  async function walk(dir, depth) {
     if (depth > maxDepth) return;
 
     let entries;
     try {
-      entries = readdirSync(dir, { withFileTypes: true });
+      entries = await readdir(dir, { withFileTypes: true });
     } catch {
       return;
     }
@@ -68,13 +69,13 @@ export async function scanNodeModules(rootDir, options = {}) {
       if (entry.isDirectory() && entry.name === 'node_modules') {
         const fullPath = join(dir, entry.name);
         try {
-          const stat = statSync(fullPath);
-          const size = dirSize(fullPath);
-          const type = detectProjectType(dir);
+          const st = await stat(fullPath);
+          const size = await dirSize(fullPath);
+          const type = await detectProjectType(dir);
           results.push({
             path: fullPath,
             size,
-            lastModified: stat.mtime.toISOString(),
+            lastModified: st.mtime.toISOString(),
             type,
           });
           if (onProgress) onProgress(results.length, fullPath);
@@ -91,21 +92,21 @@ export async function scanNodeModules(rootDir, options = {}) {
         if (entry.name.startsWith('.') && entry.name !== '.config') {
           continue;
         }
-        walk(join(dir, entry.name), depth + 1);
+        await walk(join(dir, entry.name), depth + 1);
       }
     }
   }
 
-  walk(rootDir, 0);
+  await walk(rootDir, 0);
   return results;
 }
 
 /**
  * Detect the package manager type for a project directory.
  */
-function detectProjectType(dir) {
+async function detectProjectType(dir) {
   try {
-    const entries = readdirSync(dir);
+    const entries = await readdir(dir);
     if (entries.includes('pnpm-lock.yaml')) return 'pnpm';
     if (entries.includes('yarn.lock')) return 'yarn';
     if (entries.includes('package-lock.json')) return 'npm';
@@ -129,29 +130,29 @@ export function formatSize(bytes) {
 /**
  * Inspect a node_modules directory: count packages, list top packages by size.
  * @param {string} nmPath - path to node_modules directory
- * @returns {object} { packageCount, topPackages: [{name, size, sizeFormatted}] }
+ * @returns {Promise<object>} { packageCount, topPackages: [{name, size, sizeFormatted}] }
  */
-export function inspectNodeModules(nmPath) {
+export async function inspectNodeModules(nmPath) {
   const packages = [];
   try {
-    const entries = readdirSync(nmPath, { withFileTypes: true });
+    const entries = await readdir(nmPath, { withFileTypes: true });
     for (const entry of entries) {
       if (!entry.isDirectory()) continue;
       // Handle scoped packages (@scope/pkg)
       if (entry.name.startsWith('@')) {
         try {
-          const scoped = readdirSync(join(nmPath, entry.name), { withFileTypes: true });
+          const scoped = await readdir(join(nmPath, entry.name), { withFileTypes: true });
           for (const sub of scoped) {
             if (!sub.isDirectory()) continue;
             const pkgPath = join(nmPath, entry.name, sub.name);
-            const size = dirSize(pkgPath);
+            const size = await dirSize(pkgPath);
             packages.push({ name: `${entry.name}/${sub.name}`, size });
           }
         } catch { /* skip */ }
         continue;
       }
       const pkgPath = join(nmPath, entry.name);
-      const size = dirSize(pkgPath);
+      const size = await dirSize(pkgPath);
       packages.push({ name: entry.name, size });
     }
   } catch {

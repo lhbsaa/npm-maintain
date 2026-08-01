@@ -1,4 +1,4 @@
-import { getAllCacheInfo, getCacheInfo, getGlobalInfo } from '../lib/cache.js';
+import { getAllCacheInfo, getGlobalInfo, getAllGlobalInfo } from '../lib/cache.js';
 import { execText } from '../lib/bridge.js';
 import { getCacheCommands, detectPackageManager, PM_COMMANDS } from '../lib/pm.js';
 import { formatSize } from '../lib/scanner.js';
@@ -38,17 +38,8 @@ async function globalInfo(ctx) {
 
 // GET /api/cache/all-globals
 async function allGlobals(ctx) {
-  const results = [];
-  for (const pm of ['npm', 'pnpm', 'yarn']) {
-    try {
-      const info = await getGlobalInfo(pm, ctx.targetDir);
-      if (info.packages.length > 0 || (info.root && info.root !== 'N/A')) {
-        results.push(info);
-      }
-    } catch {
-      // PM not installed
-    }
-  }
+  const infos = await getAllGlobalInfo(ctx.targetDir);
+  const results = infos.filter(info => info.packages.length > 0 || (info.root && info.root !== 'N/A'));
   return { managers: results };
 }
 

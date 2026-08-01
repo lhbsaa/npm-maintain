@@ -39,14 +39,25 @@ export async function execCommand(command, cwd, timeout = 120000) {
 export async function execJSON(command, cwd) {
   const output = await execCommand(command, cwd);
   if (!output) return {};
-  // Some commands (yarn) wrap output in extra lines; find the JSON
-  const jsonStart = output.indexOf('{');
-  const jsonEnd = output.lastIndexOf('}');
-  if (jsonStart === -1) return {};
-  const jsonStr = output.slice(jsonStart, jsonEnd + 1);
+  // Fast path: most npm/pnpm --json output is pure JSON.
   try {
-    return JSON.parse(jsonStr);
+    return JSON.parse(output);
   } catch {
+    // Fall back: some commands (yarn) prefix JSON with log lines. Scan for
+    // the first valid JSON object/array rather than blindly slicing on the
+    // first '{' (which could sit inside a log message and grab the wrong span).
+    for (let i = 0; i < output.length; i++) {
+      const ch = output[i];
+      if (ch !== '{' && ch !== '[') continue;
+      const close = ch === '{' ? '}' : ']';
+      const j = output.lastIndexOf(close);
+      if (j <= i) continue;
+      try {
+        return JSON.parse(output.slice(i, j + 1));
+      } catch {
+        // keep scanning for a later valid start
+      }
+    }
     return { raw: output };
   }
 }

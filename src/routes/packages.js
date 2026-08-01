@@ -1,6 +1,7 @@
 import { detectPackageManager, PM_COMMANDS, validatePackageName } from '../lib/pm.js';
 import { execText, execJSON } from '../lib/bridge.js';
-import { readFileSync, existsSync } from 'fs';
+import { existsSync } from 'fs';
+import { readFile } from 'fs/promises';
 import { join } from 'path';
 import { parseGlobalPackages } from '../lib/cache.js';
 
@@ -12,7 +13,7 @@ async function listPackages(ctx) {
   const pkgPath = join(ctx.targetDir, 'package.json');
   let pkg = {};
   if (existsSync(pkgPath)) {
-    pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'));
+    pkg = JSON.parse(await readFile(pkgPath, 'utf-8'));
   }
 
   // Parse into a clean array of { name, installed, wanted, type }

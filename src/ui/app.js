@@ -15,9 +15,15 @@ async function api(path, options = {}) {
     headers: { 'Content-Type': 'application/json' },
     ...options,
   });
-  const data = await res.json();
-  if (!res.ok && data.error) throw new Error(data.error);
-  return data;
+  const text = await res.text();
+  let data = null;
+  if (text) {
+    try { data = JSON.parse(text); } catch { /* non-JSON response */ }
+  }
+  if (!res.ok) {
+    throw new Error(data && data.error ? data.error : `Request failed (${res.status})`);
+  }
+  return data || {};
 }
 
 async function apiPost(path, body) {
@@ -333,7 +339,7 @@ async function updateAllPackages() {
     async () => {
       try {
         showToast('正在更新全部依赖...', 'info');
-        const result = await apiPost('/api/packages/update-all', {});
+        await apiPost('/api/packages/update-all', {});
         showToast('全部更新完成', 'success');
         loadPackages();
       } catch (err) {
@@ -563,9 +569,18 @@ function renderCleanup(data) {
 
 function selectAllNodeModules() {
   const checkboxes = document.querySelectorAll('#cleanup-tbody input[type="checkbox"]');
-  const allChecked = [...checkboxes].every(cb => cb.checked);
+  const allChecked = checkboxes.length > 0 && [...checkboxes].every(cb => cb.checked);
   checkboxes.forEach(cb => {
     cb.checked = !allChecked;
+    if (cb.checked) selectedPaths.add(cb.dataset.path);
+    else selectedPaths.delete(cb.dataset.path);
+  });
+}
+
+function invertSelection() {
+  const checkboxes = document.querySelectorAll('#cleanup-tbody input[type="checkbox"]');
+  checkboxes.forEach(cb => {
+    cb.checked = !cb.checked;
     if (cb.checked) selectedPaths.add(cb.dataset.path);
     else selectedPaths.delete(cb.dataset.path);
   });
@@ -642,7 +657,24 @@ async function inspectDir(path) {
 async function loadDiskUsage() {
   try {
     const data = await api('/api/cleanup/disk-usage');
-    showToast(`缓存总占用: ${esc(data.totalSizeFormatted)}`, 'info');
+    const cacheRows = (data.caches || []).map(c => `
+      <tr>
+        <td><span class="badge badge-dep">${esc(c.pm.toUpperCase())}</span></td>
+        <td class="text-yellow mono">${esc(c.sizeFormatted)}</td>
+        <td class="mono text-muted" style="max-width:300px;word-break:break-all;">${esc(c.path)}</td>
+      </tr>
+    `).join('');
+    showModal(
+      '缓存磁盘占用',
+      `<p>缓存总占用: <span class="text-red">${esc(data.totalSizeFormatted)}</span></p>
+       <table class="data-table compact" style="margin-top:8px;">
+         <thead><tr><th>包管理器</th><th>大小</th><th>路径</th></tr></thead>
+         <tbody>${cacheRows || '<tr><td colspan="3" class="text-muted">无缓存</td></tr>'}</tbody>
+       </table>`,
+      null,
+      '关闭',
+      'btn'
+    );
   } catch (err) {
     showToast(`查询失败: ${err.message}`, 'error');
   }
@@ -754,17 +786,19 @@ async function loadTree() {
   }
 }
 
-function renderTreeNode(node, prefix, isRoot) {
+function renderTreeNode(node, prefix, isRoot, depth = 0, maxDepth = 12) {
   if (!node) return '';
   const name = isRoot ? (node.name || 'root') : node.name || 'unknown';
   const version = node.version || '';
   let html = `<div class="tree-node">${esc(prefix)}${esc(name)}${version ? ` <span class="text-green">@${esc(version)}</span>` : ''}</div>`;
 
-  if (node.dependencies) {
+  if (node.dependencies && depth < maxDepth) {
     const deps = Object.entries(node.dependencies);
     for (const [depName, depInfo] of deps) {
-      html += `<div class="tree-children">${renderTreeNode({ ...depInfo, name: depName }, prefix + '  ', false)}</div>`;
+      html += `<div class="tree-children">${renderTreeNode({ ...depInfo, name: depName }, prefix + '  ', false, depth + 1, maxDepth)}</div>`;
     }
+  } else if (node.dependencies && depth >= maxDepth) {
+    html += `<div class="tree-children text-muted">… (max depth ${maxDepth} reached, deeper deps hidden)</div>`;
   }
   return html;
 }
@@ -836,7 +870,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Cleanup tab
   document.getElementById('scan-btn').addEventListener('click', scanNodeModules);
-  document.getElementById('select-all-btn').addEventListener('click', selectAllNodeModules);
+  document.getElementById('select-all-btn').addEventListener('click', invertSelection);
   document.getElementById('delete-selected-btn').addEventListener('click', deleteSelected);
   document.getElementById('disk-usage-btn').addEventListener('click', loadDiskUsage);
   document.getElementById('cleanup-select-all').addEventListener('change', selectAllNodeModules);

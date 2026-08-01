@@ -2,8 +2,7 @@ import { scanNodeModules, dirSize, formatSize, inspectNodeModules } from '../lib
 import { rmSync, existsSync, statSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
-import { getGlobalInfo } from '../lib/cache.js';
-import { getAllCacheInfo } from '../lib/cache.js';
+import { getAllCacheInfo, getAllGlobalInfo } from '../lib/cache.js';
 
 // POST /api/cleanup/scan  { rootDir }
 async function scan(ctx) {
@@ -63,24 +62,17 @@ async function deleteDirs(ctx) {
 
 // GET /api/cleanup/globals
 async function globals(ctx) {
-  const managers = [];
-  for (const pm of ['npm', 'pnpm', 'yarn']) {
-    try {
-      const info = await getGlobalInfo(pm, ctx.targetDir);
-      if (info.root && info.root !== 'N/A') {
-        managers.push({
-          pm,
-          root: info.root,
-          rootSize: info.rootSize,
-          rootSizeFormatted: info.rootSizeFormatted,
-          packageCount: info.packages.length,
-          packages: info.packages,
-        });
-      }
-    } catch {
-      // PM not installed
-    }
-  }
+  const infos = await getAllGlobalInfo(ctx.targetDir);
+  const managers = infos
+    .filter(info => info.root && info.root !== 'N/A')
+    .map(info => ({
+      pm: info.pm,
+      root: info.root,
+      rootSize: info.rootSize,
+      rootSizeFormatted: info.rootSizeFormatted,
+      packageCount: info.packages.length,
+      packages: info.packages,
+    }));
   const totalSize = managers.reduce((sum, m) => sum + (m.rootSize || 0), 0);
   return { managers, totalSize, totalSizeFormatted: formatSize(totalSize) };
 }
@@ -117,7 +109,7 @@ async function inspect(ctx) {
   if (!existsSync(nmPath)) {
     return { error: 'Path does not exist' };
   }
-  const info = inspectNodeModules(nmPath);
+  const info = await inspectNodeModules(nmPath);
   return { path: nmPath, ...info };
 }
 

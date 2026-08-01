@@ -2,7 +2,7 @@ import { existsSync, statSync } from 'fs';
 import { join } from 'path';
 import { homedir, platform } from 'os';
 import { dirSize, formatSize } from './scanner.js';
-import { execText, execJSON } from './bridge.js';
+import { execText, execJSON, execCommand } from './bridge.js';
 import { PM_COMMANDS, getCacheCommands } from './pm.js';
 
 /**
@@ -52,7 +52,7 @@ export async function getCacheInfo(pm, cwd) {
 
   let size = 0;
   if (cachePath && existsSync(cachePath)) {
-    size = dirSize(cachePath);
+    size = await dirSize(cachePath);
   }
 
   return {
@@ -66,28 +66,16 @@ export async function getCacheInfo(pm, cwd) {
 
 /**
  * Check if a command exists on the system (fast, non-blocking).
- * Uses top-level imports instead of dynamic import() for efficiency.
+ * Reuses the shared exec bridge instead of a separate dynamic import.
  */
 async function commandExists(cmd) {
   const checkCmd = process.platform === 'win32' ? `where ${cmd}` : `which ${cmd}`;
   try {
-    const { execAsync } = await getExecAsync();
-    await execAsync(checkCmd, { timeout: 3000, shell: true });
+    await execCommand(checkCmd, undefined, 3000);
     return true;
   } catch {
     return false;
   }
-}
-
-// Lazy-init promisified exec (once, reused)
-let _execAsync = null;
-async function getExecAsync() {
-  if (!_execAsync) {
-    const { exec } = await import('child_process');
-    const { promisify } = await import('util');
-    _execAsync = { execAsync: promisify(exec) };
-  }
-  return _execAsync;
 }
 
 /**
@@ -164,7 +152,7 @@ export async function getGlobalInfo(pm, cwd) {
 
   let rootSize = 0;
   if (root && existsSync(root)) {
-    rootSize = dirSize(root);
+    rootSize = await dirSize(root);
   }
 
   return {
@@ -174,4 +162,22 @@ export async function getGlobalInfo(pm, cwd) {
     rootSizeFormatted: formatSize(rootSize),
     packages,
   };
+}
+
+/**
+ * Get global packages info for all installed package managers.
+ * Shared by cache/all-globals and cleanup/globals routes to avoid duplicated
+ * iteration logic. Returns every manager's info (caller filters as needed).
+ */
+export async function getAllGlobalInfo(cwd) {
+  const results = [];
+  for (const pm of ['npm', 'pnpm', 'yarn']) {
+    try {
+      const info = await getGlobalInfo(pm, cwd);
+      results.push(info);
+    } catch {
+      // PM not installed or command failed
+    }
+  }
+  return results;
 }

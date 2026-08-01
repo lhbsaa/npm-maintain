@@ -1,4 +1,4 @@
-import { existsSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
 
 /**
@@ -16,10 +16,27 @@ export function validatePackageName(name) {
 }
 
 /**
- * Detect which package manager is in use based on lockfile presence.
- * Priority: pnpm-lock.yaml > yarn.lock > package-lock.json > npm (default)
+ * Detect which package manager is in use.
+ * Priority: package.json#packageManager (corepack) > lockfile > npm (default).
+ * Note: package-lock.json presence also implies npm, but npm is the default anyway.
+ * @returns {'npm'|'pnpm'|'yarn'}
  */
 export function detectPackageManager(cwd) {
+  // Prefer the explicit packageManager field (corepack standard) when present.
+  try {
+    const pkgPath = join(cwd, 'package.json');
+    if (existsSync(pkgPath)) {
+      const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'));
+      const pm = pkg.packageManager;
+      if (typeof pm === 'string') {
+        if (pm.startsWith('pnpm')) return 'pnpm';
+        if (pm.startsWith('yarn')) return 'yarn';
+        if (pm.startsWith('npm')) return 'npm';
+      }
+    }
+  } catch {
+    // ignore parse errors, fall back to lockfile detection
+  }
   if (existsSync(join(cwd, 'pnpm-lock.yaml'))) return 'pnpm';
   if (existsSync(join(cwd, 'yarn.lock'))) return 'yarn';
   return 'npm';
