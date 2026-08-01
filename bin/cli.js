@@ -15,7 +15,12 @@ let dir = process.cwd();
 
 for (let i = 0; i < args.length; i++) {
   if ((args[i] === '--port' || args[i] === '-p') && args[i + 1]) {
-    port = parseInt(args[i + 1], 10);
+    const parsed = parseInt(args[i + 1], 10);
+    if (isNaN(parsed) || parsed < 1 || parsed > 65535) {
+      console.error(`Invalid port number: ${args[i + 1]}`);
+      process.exit(1);
+    }
+    port = parsed;
     i++;
   } else if ((args[i] === '--dir' || args[i] === '-d') && args[i + 1]) {
     dir = resolve(args[i + 1]);
@@ -38,6 +43,16 @@ Options:
 
 // --- Start server ---
 const server = startServer({ port, targetDir: dir });
+
+server.on('error', (err) => {
+  if (err.code === 'EADDRINUSE') {
+    console.error(`\n  Error: port ${port} is already in use.`);
+    console.error(`  Try a different port with --port <number>, e.g. --port ${port + 1}\n`);
+  } else {
+    console.error(`\n  Server error: ${err.message}\n`);
+  }
+  process.exit(1);
+});
 
 server.listen(port, '127.0.0.1', () => {
   const url = `http://127.0.0.1:${port}`;

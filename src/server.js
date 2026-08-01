@@ -83,9 +83,11 @@ function parseBody(req) {
  */
 function sendJSON(res, status, data) {
   const body = JSON.stringify(data, null, 2);
+  // No CORS headers: the SPA and API share the same origin, so cross-origin
+  // access is not needed. Omitting Allow-Origin prevents malicious websites
+  // open in the user's browser from driving the local tool (local CSRF).
   res.writeHead(status, {
     'Content-Type': 'application/json; charset=utf-8',
-    'Access-Control-Allow-Origin': '*',
   });
   res.end(body);
 }
@@ -147,20 +149,19 @@ async function getStatus(targetDir) {
  */
 export function startServer({ port, targetDir }) {
   const server = createServer(async (req, res) => {
-    // Handle CORS preflight
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-
-    if (req.method === 'OPTIONS') {
-      res.writeHead(204);
-      res.end();
-      return;
-    }
-
     const url = new URL(req.url, `http://${req.headers.host}`);
     const pathname = url.pathname;
     const query = Object.fromEntries(url.searchParams.entries());
+
+    // Block cross-origin requests (defense against local CSRF from malicious
+    // websites). Only same-origin (the served SPA) and loopback origin are allowed.
+    const origin = req.headers.origin;
+    const host = req.headers.host || '';
+    if (origin && origin !== `http://${host}`) {
+      res.writeHead(403, { 'Content-Type': 'text/plain' });
+      res.end('Forbidden: cross-origin requests are not allowed');
+      return;
+    }
 
     // Special: status endpoint
     if (pathname === '/api/status' && req.method === 'GET') {

@@ -1,0 +1,14 @@
+# Dependencies
+node_modules/
+
+# Runtime / redirect output
+stdout.txt
+stderr.txt
+*.log
+
+# MiMoCode agent state
+.mimocode/
+
+# OS / editor
+.DS_Store
+Thumbs.db
