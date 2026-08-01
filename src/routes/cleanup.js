@@ -1,4 +1,4 @@
-import { scanNodeModules, dirSize, formatSize } from '../lib/scanner.js';
+import { scanNodeModules, dirSize, formatSize, inspectNodeModules } from '../lib/scanner.js';
 import { rmSync, existsSync, statSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
@@ -102,9 +102,29 @@ async function diskUsage(ctx) {
   };
 }
 
+// POST /api/cleanup/inspect  { path }
+async function inspect(ctx) {
+  const { path: nmPath } = ctx.body;
+  if (!nmPath) return { error: 'Path is required' };
+  // Security: only inspect node_modules directories
+  const baseName = nmPath.split(/[/\\]/).pop();
+  if (baseName !== 'node_modules') {
+    return { error: 'Only node_modules directories can be inspected' };
+  }
+  if (nmPath.includes('..')) {
+    return { error: 'Path traversal not allowed' };
+  }
+  if (!existsSync(nmPath)) {
+    return { error: 'Path does not exist' };
+  }
+  const info = inspectNodeModules(nmPath);
+  return { path: nmPath, ...info };
+}
+
 export const cleanupRoutes = [
   { method: 'POST', pattern: '/api/cleanup/scan',       handler: scan },
   { method: 'POST', pattern: '/api/cleanup/delete',     handler: deleteDirs },
+  { method: 'POST', pattern: '/api/cleanup/inspect',    handler: inspect },
   { method: 'GET',  pattern: '/api/cleanup/globals',    handler: globals },
   { method: 'GET',  pattern: '/api/cleanup/disk-usage',  handler: diskUsage },
 ];

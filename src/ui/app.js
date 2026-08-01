@@ -205,6 +205,7 @@ function renderPackages(data) {
         <td class="mono text-muted">${esc(pkg.wanted)}</td>
         <td><span class="badge ${pkg.type === 'dev' ? 'badge-dev' : 'badge-dep'}">${esc(pkg.type)}</span></td>
         <td>
+          <button class="btn btn-sm" onclick="updatePackage('${esc(pkg.name)}')">更新</button>
           <button class="btn btn-sm btn-primary" onclick="upgradePackage('${esc(pkg.name)}')">升级</button>
           <button class="btn btn-sm btn-danger" onclick="uninstallPackage('${esc(pkg.name)}')">卸载</button>
         </td>
@@ -305,6 +306,45 @@ async function upgradePackage(name) {
   );
 }
 
+async function updatePackage(name) {
+  showModal(
+    '更新包',
+    `<p>即将更新 <span class="mono text-green">${esc(name)}</span> (在版本范围内更新)</p>`,
+    async () => {
+      try {
+        showToast(`正在更新 ${name}...`, 'info');
+        await apiPost('/api/packages/update', { name });
+        showToast(`更新成功: ${name}`, 'success');
+        loadPackages();
+      } catch (err) {
+        showToast(`更新失败: ${err.message}`, 'error');
+      }
+    },
+    '更新',
+    'btn-primary'
+  );
+}
+
+async function updateAllPackages() {
+  showModal(
+    '更新全部',
+    `<p>即将更新所有依赖包 (在 <span class="mono">package.json</span> 声明的版本范围内)。</p>
+     <p class="text-muted">不同于升级到最新版,更新只会在 semver 范围内升级补丁/小版本。</p>`,
+    async () => {
+      try {
+        showToast('正在更新全部依赖...', 'info');
+        const result = await apiPost('/api/packages/update-all', {});
+        showToast('全部更新完成', 'success');
+        loadPackages();
+      } catch (err) {
+        showToast(`更新失败: ${err.message}`, 'error');
+      }
+    },
+    '更新全部',
+    'btn-primary'
+  );
+}
+
 // ====================
 // Tab 2: Cache
 // ====================
@@ -400,6 +440,45 @@ async function loadGlobals() {
   }
 }
 
+async function loadRegistry() {
+  const container = document.getElementById('registry-container');
+  container.innerHTML = '<div class="text-muted">Loading registry info...</div>';
+  try {
+    const data = await api('/api/cache/registry');
+    if (!data.registries || data.registries.length === 0) {
+      container.innerHTML = '<div class="text-muted">未找到镜像源配置</div>';
+      return;
+    }
+    const knownRegistries = {
+      'https://registry.npmjs.org/': 'npm 官方',
+      'https://registry.npmmirror.com/': '淘宝镜像',
+      'https://registry.npm.taobao.org/': '淘宝旧镜像',
+      'https://r.cnpmjs.org/': 'CNPM',
+      'https://registry.yarnpkg.com/': 'Yarn 官方',
+    };
+    container.innerHTML = `
+      <div class="cache-card">
+        <div class="cache-card-header"><h3>镜像源 (Registry)</h3></div>
+        <table class="data-table compact">
+          <thead><tr><th>包管理器</th><th>源地址</th><th>来源</th></tr></thead>
+          <tbody>
+            ${data.registries.map(r => {
+              const label = knownRegistries[r.registry] || '自定义';
+              return `<tr>
+                <td><span class="badge badge-dep">${esc(r.pm.toUpperCase())}</span></td>
+                <td class="mono">${esc(r.registry)}</td>
+                <td class="text-muted">${esc(label)}</td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+    `;
+  } catch (err) {
+    container.innerHTML = `<div class="text-red">${err.message}</div>`;
+  }
+}
+
 function renderGlobals(data) {
   const container = document.getElementById('globals-container');
   if (!data.managers || data.managers.length === 0) {
@@ -466,7 +545,10 @@ function renderCleanup(data) {
       <td class="text-yellow mono">${esc(formatBytes(r.size))}</td>
       <td class="text-muted">${esc(formatDate(r.lastModified))}</td>
       <td><span class="badge ${r.type === 'pnpm' ? 'badge-dev' : 'badge-dep'}">${esc(r.type)}</span></td>
-      <td><button class="btn btn-sm btn-danger" onclick="deleteSingle('${esc(r.path.replace(/\\/g, '/'))}')">删除</button></td>
+      <td>
+        <button class="btn btn-sm" onclick="inspectDir('${esc(r.path.replace(/\\/g, '/'))}')">详情</button>
+        <button class="btn btn-sm btn-danger" onclick="deleteSingle('${esc(r.path.replace(/\\/g, '/'))}')">删除</button>
+      </td>
     </tr>
   `).join('');
 
@@ -533,6 +615,28 @@ async function deleteSingle(path) {
       }
     }
   );
+}
+
+async function inspectDir(path) {
+  try {
+    showToast('正在扫描包详情...', 'info');
+    const data = await apiPost('/api/cleanup/inspect', { path });
+    const pkgList = data.topPackages.map(p => `<tr><td class="mono">${esc(p.name)}</td><td class="text-yellow mono">${esc(p.sizeFormatted)}</td></tr>`).join('');
+    showModal(
+      `node_modules 详情 (${esc(String(data.packageCount))} 个包)`,
+      `<p class="mono text-muted">${esc(path)}</p>
+       <p>包含 <span class="text-yellow">${esc(String(data.packageCount))}</span> 个包</p>
+       <table class="data-table compact" style="margin-top:8px;">
+         <thead><tr><th>包名 (按大小排序, 前20)</th><th>大小</th></tr></thead>
+         <tbody>${pkgList}</tbody>
+       </table>`,
+      null,
+      '关闭',
+      'btn'
+    );
+  } catch (err) {
+    showToast(`查询失败: ${err.message}`, 'error');
+  }
 }
 
 async function loadDiskUsage() {
@@ -717,6 +821,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (currentPkgMode === 'global') loadGlobalPackages();
     else loadPackages();
   });
+  document.getElementById('pkg-update-all-btn').addEventListener('click', updateAllPackages);
   document.getElementById('pkg-mode-project').addEventListener('click', () => switchPkgMode('project'));
   document.getElementById('pkg-mode-global').addEventListener('click', () => switchPkgMode('global'));
   document.getElementById('pkg-search-btn').addEventListener('click', searchPackages);
@@ -726,6 +831,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Cache tab
   document.getElementById('cache-refresh-btn').addEventListener('click', loadCacheInfo);
+  document.getElementById('cache-registry-btn').addEventListener('click', loadRegistry);
   document.getElementById('globals-load-btn').addEventListener('click', loadGlobals);
 
   // Cleanup tab
@@ -750,9 +856,12 @@ document.addEventListener('DOMContentLoaded', () => {
 window.installPackage = installPackage;
 window.uninstallPackage = uninstallPackage;
 window.upgradePackage = upgradePackage;
+window.updatePackage = updatePackage;
+window.updateAllPackages = updateAllPackages;
 window.globalUninstallPackage = globalUninstallPackage;
 window.cleanCache = cleanCache;
 window.verifyCache = verifyCache;
 window.pruneStore = pruneStore;
 window.deleteSingle = deleteSingle;
+window.inspectDir = inspectDir;
 window.closeModal = closeModal;

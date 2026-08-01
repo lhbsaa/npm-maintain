@@ -1,4 +1,4 @@
-import { readdirSync, statSync } from 'fs';
+import { readdirSync, statSync, readFileSync } from 'fs';
 import { join } from 'path';
 
 /**
@@ -124,4 +124,49 @@ export function formatSize(bytes) {
   const i = Math.floor(Math.log(bytes) / Math.log(1024));
   const value = bytes / Math.pow(1024, i);
   return `${value.toFixed(i === 0 ? 0 : 2)} ${units[i]}`;
+}
+
+/**
+ * Inspect a node_modules directory: count packages, list top packages by size.
+ * @param {string} nmPath - path to node_modules directory
+ * @returns {object} { packageCount, topPackages: [{name, size, sizeFormatted}] }
+ */
+export function inspectNodeModules(nmPath) {
+  const packages = [];
+  try {
+    const entries = readdirSync(nmPath, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      // Handle scoped packages (@scope/pkg)
+      if (entry.name.startsWith('@')) {
+        try {
+          const scoped = readdirSync(join(nmPath, entry.name), { withFileTypes: true });
+          for (const sub of scoped) {
+            if (!sub.isDirectory()) continue;
+            const pkgPath = join(nmPath, entry.name, sub.name);
+            const size = dirSize(pkgPath);
+            packages.push({ name: `${entry.name}/${sub.name}`, size });
+          }
+        } catch { /* skip */ }
+        continue;
+      }
+      const pkgPath = join(nmPath, entry.name);
+      const size = dirSize(pkgPath);
+      packages.push({ name: entry.name, size });
+    }
+  } catch {
+    // not accessible
+  }
+
+  // Sort by size descending
+  packages.sort((a, b) => b.size - a.size);
+
+  return {
+    packageCount: packages.length,
+    topPackages: packages.slice(0, 20).map(p => ({
+      name: p.name,
+      size: p.size,
+      sizeFormatted: formatSize(p.size),
+    })),
+  };
 }

@@ -31,6 +31,7 @@
           <input type="text" id="pkg-search" placeholder="搜索 npm 包名..." class="input">
           <button id="pkg-search-btn" class="btn btn-primary">搜索</button>
           <button id="pkg-refresh-btn" class="btn">刷新列表</button>
+          <button id="pkg-update-all-btn" class="btn">更新全部</button>
         </div>
         <div id="pkg-search-results" class="search-results"></div>
         <!-- Project deps table -->
@@ -60,9 +61,11 @@
       <div id="tab-cache" class="tab-content">
         <div class="toolbar">
           <button id="cache-refresh-btn" class="btn">刷新</button>
+          <button id="cache-registry-btn" class="btn">查看镜像源</button>
           <button id="globals-load-btn" class="btn">查看全局包</button>
         </div>
         <div id="cache-info-container"></div>
+        <div id="registry-container"></div>
         <div id="globals-container"></div>
       </div>
 

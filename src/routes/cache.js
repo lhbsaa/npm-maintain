@@ -63,6 +63,22 @@ async function storePrune(ctx) {
   return { success: true, pm, output };
 }
 
+// GET /api/cache/registry
+async function registryInfo(ctx) {
+  const results = [];
+  for (const pm of ['npm', 'pnpm', 'yarn']) {
+    const cmds = PM_COMMANDS[pm];
+    if (!cmds.registry) continue;
+    try {
+      const output = await execText(cmds.registry(), ctx.targetDir);
+      results.push({ pm, registry: output.trim() });
+    } catch {
+      // PM not installed
+    }
+  }
+  return { registries: results };
+}
+
 export const cacheRoutes = [
   { method: 'GET',  pattern: '/api/cache/info',          handler: cacheInfo },
   { method: 'POST', pattern: '/api/cache/clean',         handler: cacheClean },
@@ -70,4 +86,5 @@ export const cacheRoutes = [
   { method: 'GET',  pattern: '/api/cache/global',        handler: globalInfo },
   { method: 'GET',  pattern: '/api/cache/all-globals',   handler: allGlobals },
   { method: 'POST', pattern: '/api/cache/store-prune',   handler: storePrune },
+  { method: 'GET',  pattern: '/api/cache/registry',      handler: registryInfo },
 ];

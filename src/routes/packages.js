@@ -83,6 +83,24 @@ async function upgradePackage(ctx) {
   return { success: true, pm, output };
 }
 
+// POST /api/packages/update  { name }
+async function updatePackage(ctx) {
+  const { name } = ctx.body;
+  if (!name) return { error: 'Package name is required' };
+  const pm = detectPackageManager(ctx.targetDir);
+  const cmd = PM_COMMANDS[pm].update(name);
+  const output = await execText(cmd, ctx.targetDir);
+  return { success: true, pm, output };
+}
+
+// POST /api/packages/update-all
+async function updateAllPackages(ctx) {
+  const pm = detectPackageManager(ctx.targetDir);
+  const cmd = PM_COMMANDS[pm].updateAll();
+  const output = await execText(cmd, ctx.targetDir);
+  return { success: true, pm, output };
+}
+
 // GET /api/packages/global-list
 async function listGlobalPackages(ctx) {
   const results = [];
@@ -129,5 +147,7 @@ export const packagesRoutes = [
   { method: 'POST', pattern: '/api/packages/install',         handler: installPackage },
   { method: 'POST', pattern: '/api/packages/uninstall',        handler: uninstallPackage },
   { method: 'POST', pattern: '/api/packages/upgrade',          handler: upgradePackage },
+  { method: 'POST', pattern: '/api/packages/update',          handler: updatePackage },
+  { method: 'POST', pattern: '/api/packages/update-all',     handler: updateAllPackages },
   { method: 'POST', pattern: '/api/packages/global-uninstall', handler: globalUninstallPackage },
 ];
