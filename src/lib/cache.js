@@ -89,14 +89,11 @@ export async function getAllCacheInfo(cwd) {
     }
   }
 
-  const results = [];
-  for (const pm of managers) {
-    try {
-      results.push(await getCacheInfo(pm, cwd));
-    } catch (err) {
-      results.push({ pm, error: err.message, path: 'N/A', size: 0, sizeFormatted: 'N/A' });
-    }
-  }
+  const results = await Promise.all(managers.map(pm =>
+    getCacheInfo(pm, cwd).catch(err => ({
+      pm, error: err.message, path: 'N/A', size: 0, sizeFormatted: 'N/A',
+    }))
+  ));
   return results;
 }
 
@@ -170,14 +167,8 @@ export async function getGlobalInfo(pm, cwd) {
  * iteration logic. Returns every manager's info (caller filters as needed).
  */
 export async function getAllGlobalInfo(cwd) {
-  const results = [];
-  for (const pm of ['npm', 'pnpm', 'yarn']) {
-    try {
-      const info = await getGlobalInfo(pm, cwd);
-      results.push(info);
-    } catch {
-      // PM not installed or command failed
-    }
-  }
-  return results;
+  const results = await Promise.all(['npm', 'pnpm', 'yarn'].map(pm =>
+    getGlobalInfo(pm, cwd).catch(() => null)
+  ));
+  return results.filter(Boolean);
 }

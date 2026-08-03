@@ -44,7 +44,11 @@ function matchRoute(pattern, pathname) {
   const params = {};
   for (let i = 0; i < patternParts.length; i++) {
     if (patternParts[i].startsWith(':')) {
-      params[patternParts[i].slice(1)] = decodeURIComponent(pathParts[i]);
+      try {
+        params[patternParts[i].slice(1)] = decodeURIComponent(pathParts[i]);
+      } catch {
+        return null; // malformed percent-encoding in a path segment
+      }
     } else if (patternParts[i] !== pathParts[i]) {
       return null;
     }
@@ -145,6 +149,25 @@ async function getStatus(targetDir) {
 }
 
 /**
+ * Check that the Host header points at a loopback address.
+ * Prevents DNS rebinding: an attacker domain resolving to 127.0.0.1 would
+ * otherwise pass the origin check with a matching (attacker-controlled) host.
+ */
+function isLoopbackHost(host) {
+  if (!host) return false;
+  let h = host.trim().toLowerCase();
+  if (h.startsWith('[')) {
+    // IPv6 literal like [::1]:3721
+    const end = h.indexOf(']');
+    if (end === -1) return false;
+    h = h.slice(1, end);
+  } else {
+    h = h.split(':')[0];
+  }
+  return h === '127.0.0.1' || h === 'localhost' || h === '::1';
+}
+
+/**
  * Start the HTTP server.
  */
 export function startServer({ port, targetDir }) {
@@ -153,11 +176,18 @@ export function startServer({ port, targetDir }) {
     const pathname = url.pathname;
     const query = Object.fromEntries(url.searchParams.entries());
 
-    // Block cross-origin requests (defense against local CSRF from malicious
-    // websites). Only same-origin (the served SPA) and loopback origin are allowed.
-    const origin = req.headers.origin;
+    // Only loopback hosts are trusted; anything else could be a rebinding host.
     const host = req.headers.host || '';
-    if (origin && origin !== `http://${host}`) {
+    if (!isLoopbackHost(host)) {
+      res.writeHead(403, { 'Content-Type': 'text/plain' });
+      res.end('Forbidden: non-loopback hosts are not allowed');
+      return;
+    }
+
+    // Block cross-origin requests (defense against local CSRF from malicious
+    // websites). Only same-origin (the served SPA) is allowed.
+    const origin = req.headers.origin;
+    if (origin && origin !== `http://${host}` && origin !== `https://${host}`) {
       res.writeHead(403, { 'Content-Type': 'text/plain' });
       res.end('Forbidden: cross-origin requests are not allowed');
       return;

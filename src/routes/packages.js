@@ -4,6 +4,7 @@ import { existsSync } from 'fs';
 import { readFile } from 'fs/promises';
 import { join } from 'path';
 import { parseGlobalPackages } from '../lib/cache.js';
+import { scanGlobalResidue, deleteGlobalResidue } from '../lib/global-cleanup.js';
 
 // GET /api/packages/list
 async function listPackages(ctx) {
@@ -34,24 +35,29 @@ async function listPackages(ctx) {
   return { pm, packages, projectName: pkg.name || 'unnamed' };
 }
 
+// Resolve the active registry URL (honors user-configured mirrors), falling
+// back to the official one when the query fails.
+async function getRegistryBase(cwd) {
+  const pm = detectPackageManager(cwd);
+  try {
+    const out = await execText(PM_COMMANDS[pm].registry(), cwd);
+    const url = out.trim().split('\n')[0];
+    if (url && /^https?:\/\//i.test(url)) return url.replace(/\/+$/, '');
+  } catch {
+    // fall through to default
+  }
+  return 'https://registry.npmjs.org';
+}
+
 // GET /api/packages/search?q=
 async function searchPackages(ctx) {
   const q = ctx.query.q || '';
   if (!q.trim()) return { objects: [] };
-  const url = `https://registry.npmjs.org/-/v1/search?text=${encodeURIComponent(q)}&size=20`;
+  const base = await getRegistryBase(ctx.targetDir);
+  const url = `${base}/-/v1/search?text=${encodeURIComponent(q)}&size=20`;
   const res = await fetch(url);
   const data = await res.json();
   return data;
-}
-
-// GET /api/packages/latest/:name
-async function getLatestVersion(ctx) {
-  const name = ctx.params.name;
-  const url = `https://registry.npmjs.org/${encodeURIComponent(name)}/latest`;
-  const res = await fetch(url);
-  if (!res.ok) return { name, latest: null, error: 'Package not found' };
-  const data = await res.json();
-  return { name, latest: data.version, description: data.description };
 }
 
 // POST /api/packages/install  { name, isDev }
@@ -137,14 +143,34 @@ async function globalUninstallPackage(ctx) {
   else if (pm === 'yarn') cmd = `yarn global remove ${name}`;
   else return { error: `Unsupported package manager: ${pm}` };
   const output = await execText(cmd, ctx.targetDir);
-  return { success: true, pm, output };
+
+  // After uninstall, sweep any residue left behind (stray shims/orphan dirs).
+  // The freshly-uninstalled package is no longer in the registry list, so its
+  // leftovers are detected as orphans by the scan.
+  let cleaned = 0;
+  try {
+    const { managers } = await scanGlobalResidue(ctx.targetDir);
+    const items = managers.flatMap(m =>
+      [
+        ...m.orphans.map(o => ({ pm: m.pm, kind: 'dir', path: o.path })),
+        ...m.shims.map(s => ({ pm: m.pm, kind: 'shim', path: s.path })),
+      ]
+    );
+    if (items.length > 0) {
+      const { results } = await deleteGlobalResidue(ctx.targetDir, items);
+      cleaned = results.filter(r => r.success).length;
+    }
+  } catch {
+    // residue sweep is best-effort; never fail the uninstall over it
+  }
+
+  return { success: true, pm, output, cleanedResidue: cleaned };
 }
 
 export const packagesRoutes = [
   { method: 'GET',  pattern: '/api/packages/list',            handler: listPackages },
   { method: 'GET',  pattern: '/api/packages/global-list',     handler: listGlobalPackages },
   { method: 'GET',  pattern: '/api/packages/search',          handler: searchPackages },
-  { method: 'GET',  pattern: '/api/packages/latest/:name',    handler: getLatestVersion },
   { method: 'POST', pattern: '/api/packages/install',         handler: installPackage },
   { method: 'POST', pattern: '/api/packages/uninstall',        handler: uninstallPackage },
   { method: 'POST', pattern: '/api/packages/upgrade',          handler: upgradePackage },

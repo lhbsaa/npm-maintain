@@ -168,7 +168,7 @@ function renderGlobalPackages(data) {
           <td class="mono">${esc(pkg.name)}</td>
           <td class="text-green mono">${esc(pkg.version)}</td>
           <td><span class="badge badge-dep">${esc(m.pm)}</span></td>
-          <td><button class="btn btn-sm btn-danger" onclick="globalUninstallPackage('${esc(pkg.name)}', '${esc(m.pm)}')">卸载</button></td>
+          <td><button class="btn btn-sm btn-danger" data-action="global-uninstall" data-name="${esc(pkg.name)}" data-pm="${esc(m.pm)}">卸载</button></td>
         </tr>
       `;
     }
@@ -179,18 +179,123 @@ function renderGlobalPackages(data) {
 async function globalUninstallPackage(name, pm) {
   showModal(
     '卸载全局包',
-    `<p>即将卸载全局包 <span class="mono text-red">${esc(name)}</span> (${esc(pm)})</p><p class="text-muted">此操作不可撤销。</p>`,
+    `<p>即将卸载全局包 <span class="mono text-red">${esc(name)}</span> (${esc(pm)})</p>
+     <p class="text-muted">卸载后将自动清理该包遗留的 shim / 目录残留。</p>`,
     async () => {
       try {
         showToast(`正在卸载全局包 ${name}...`, 'info');
-        await apiPost('/api/packages/global-uninstall', { name, pm });
-        showToast(`卸载成功: ${name}`, 'success');
+        const result = await apiPost('/api/packages/global-uninstall', { name, pm });
+        const cleaned = result.cleanedResidue || 0;
+        showToast(cleaned > 0
+          ? `卸载成功: ${name}，已清理 ${cleaned} 项残留`
+          : `卸载成功: ${name}`, 'success');
         loadGlobalPackages();
       } catch (err) {
         showToast(`卸载失败: ${err.message}`, 'error');
       }
     },
     '卸载',
+    'btn-danger'
+  );
+}
+
+// === Global residue cleanup ===
+const selectedResidue = new Set(); // "pm|kind|path"
+
+async function scanGlobalResidue() {
+  const container = document.getElementById('global-residue-container');
+  const btn = document.getElementById('residue-scan-btn');
+  setLoading(btn, true);
+  container.innerHTML = '<div class="text-muted">正在扫描全局残留...</div>';
+  try {
+    const data = await api('/api/cleanup/global-residue');
+    renderGlobalResidue(data);
+  } catch (err) {
+    container.innerHTML = `<div class="text-red">${err.message}</div>`;
+  } finally {
+    setLoading(btn, false);
+  }
+}
+
+function renderGlobalResidue(data) {
+  const container = document.getElementById('global-residue-container');
+  const deleteBtn = document.getElementById('residue-delete-btn');
+  selectedResidue.clear();
+
+  const managers = data.managers || [];
+  const total = managers.reduce((s, m) => s + m.orphans.length + m.shims.length, 0);
+
+  if (managers.length === 0 || total === 0) {
+    container.innerHTML = '<div class="text-green">未发现全局残留</div>';
+    deleteBtn.classList.add('hidden');
+    return;
+  }
+
+  let html = `<div class="summary-bar">共发现 <span class="text-yellow">${total}</span> 项残留</div>`;
+  for (const m of managers) {
+    if (m.orphans.length === 0 && m.shims.length === 0) continue;
+    const orphanRows = m.orphans.map((o, i) => `
+      <tr>
+        <td><input type="checkbox" data-residue="${esc(m.pm)}|dir|${esc(o.path)}"></td>
+        <td class="mono">${esc(o.name)}</td>
+        <td class="text-yellow mono">${esc(o.sizeFormatted)}</td>
+        <td class="mono text-muted" style="max-width:320px;word-break:break-all;">${esc(o.path)}</td>
+      </tr>`).join('');
+    const shimRows = m.shims.map(s => `
+      <tr>
+        <td><input type="checkbox" data-residue="${esc(m.pm)}|shim|${esc(s.path)}"></td>
+        <td class="mono">${esc(s.name)}</td>
+        <td class="text-muted">shim</td>
+        <td class="mono text-muted" style="max-width:320px;word-break:break-all;">${esc(s.path)}</td>
+      </tr>`).join('');
+    html += `
+      <div class="cache-card">
+        <div class="cache-card-header">
+          <h3>${esc(m.pm.toUpperCase())} 全局残留</h3>
+          <span class="text-muted">${esc(m.root)}</span>
+        </div>
+        <table class="data-table compact">
+          <thead><tr><th></th><th>名称</th><th>大小</th><th>路径</th></tr></thead>
+          <tbody>${orphanRows}${shimRows}</tbody>
+        </table>
+      </div>`;
+  }
+  container.innerHTML = html;
+
+  container.querySelectorAll('input[data-residue]').forEach(cb => {
+    cb.addEventListener('change', (e) => {
+      if (e.target.checked) selectedResidue.add(e.target.dataset.residue);
+      else selectedResidue.delete(e.target.dataset.residue);
+      deleteBtn.classList.toggle('hidden', selectedResidue.size === 0);
+    });
+  });
+  deleteBtn.classList.add('hidden');
+}
+
+async function deleteSelectedResidue() {
+  if (selectedResidue.size === 0) return;
+  const items = [...selectedResidue].map(key => {
+    const idx1 = key.indexOf('|');
+    const idx2 = key.indexOf('|', idx1 + 1);
+    return { pm: key.slice(0, idx1), kind: key.slice(idx1 + 1, idx2), path: key.slice(idx2 + 1) };
+  });
+  showModal(
+    '删除全局残留',
+    `<p>即将删除 <span class="text-red">${items.length}</span> 项残留</p>
+     <ul>${items.map(i => `<li class="mono">${esc(i.path)}</li>`).join('')}</ul>
+     <p class="text-red">此操作不可撤销!</p>`,
+    async () => {
+      try {
+        showToast(`正在删除 ${items.length} 项残留...`, 'info');
+        const result = await apiPost('/api/cleanup/global-residue/delete', { items });
+        showToast(`已删除 ${result.deleted} 项,失败 ${result.failed} 项`, result.failed > 0 ? 'error' : 'success');
+        scanGlobalResidue();
+        loadGlobalPackages();
+      } catch (err) {
+        showToast(`删除失败: ${err.message}`, 'error');
+      }
+    },
+    '删除',
     'btn-danger'
   );
 }
@@ -211,9 +316,9 @@ function renderPackages(data) {
         <td class="mono text-muted">${esc(pkg.wanted)}</td>
         <td><span class="badge ${pkg.type === 'dev' ? 'badge-dev' : 'badge-dep'}">${esc(pkg.type)}</span></td>
         <td>
-          <button class="btn btn-sm" onclick="updatePackage('${esc(pkg.name)}')">更新</button>
-          <button class="btn btn-sm btn-primary" onclick="upgradePackage('${esc(pkg.name)}')">升级</button>
-          <button class="btn btn-sm btn-danger" onclick="uninstallPackage('${esc(pkg.name)}')">卸载</button>
+          <button class="btn btn-sm" data-action="update" data-name="${esc(pkg.name)}">更新</button>
+          <button class="btn btn-sm btn-primary" data-action="upgrade" data-name="${esc(pkg.name)}">升级</button>
+          <button class="btn btn-sm btn-danger" data-action="uninstall" data-name="${esc(pkg.name)}">卸载</button>
         </td>
       </tr>
     `;
@@ -243,8 +348,8 @@ async function searchPackages() {
           <span class="pkg-name mono">${esc(pkg.name)}</span>
           <span class="pkg-ver">${esc(pkg.version)}</span>
           <span class="pkg-desc">${esc((pkg.description || '').slice(0, 80))}</span>
-          <button class="btn btn-sm btn-primary" onclick="installPackage('${esc(pkg.name)}')">安装</button>
-          <button class="btn btn-sm" onclick="installPackage('${esc(pkg.name)}', true)">dev</button>
+          <button class="btn btn-sm btn-primary" data-action="install" data-name="${esc(pkg.name)}">安装</button>
+          <button class="btn btn-sm" data-action="install" data-name="${esc(pkg.name)}" data-dev="1">dev</button>
         </div>
       `;
     }).join('');
@@ -381,9 +486,9 @@ function renderCacheInfo(data) {
         <div class="cache-path">${esc(c.path)}</div>
         ${c.exists ? `
           <div class="cache-actions">
-            <button class="btn btn-danger btn-sm" onclick="cleanCache('${esc(c.pm)}')">清理缓存</button>
-            ${c.pm === 'npm' ? `<button class="btn btn-sm" onclick="verifyCache('${esc(c.pm)}')">验证缓存</button>` : ''}
-            ${c.pm === 'pnpm' ? `<button class="btn btn-sm" onclick="pruneStore('${esc(c.pm)}')">清理 Store</button>` : ''}
+            <button class="btn btn-danger btn-sm" data-action="clean-cache" data-pm="${esc(c.pm)}">清理缓存</button>
+            ${c.pm === 'npm' ? `<button class="btn btn-sm" data-action="verify-cache" data-pm="${esc(c.pm)}">验证缓存</button>` : ''}
+            ${c.pm === 'pnpm' ? `<button class="btn btn-sm" data-action="prune-store" data-pm="${esc(c.pm)}">清理 Store</button>` : ''}
           </div>
         ` : '<div class="text-muted">缓存目录不存在</div>'}
       </div>
@@ -518,11 +623,26 @@ async function scanNodeModules() {
   const btn = document.getElementById('scan-btn');
   setLoading(btn, true);
 
+  const summary = document.getElementById('cleanup-summary');
+  summary.innerHTML = '正在扫描... <span id="scan-progress" class="text-muted"></span>';
+  const pollTimer = setInterval(async () => {
+    try {
+      const p = await api('/api/cleanup/scan-progress');
+      const el = document.getElementById('scan-progress');
+      if (el && p && p.running) {
+        el.textContent = `已找到 ${p.found} 个 node_modules${p.current ? ' — ' + p.current : ''}`;
+      }
+    } catch { /* polling is best-effort */ }
+  }, 800);
+
   try {
     const data = await apiPost('/api/cleanup/scan', { rootDir });
+    clearInterval(pollTimer);
     currentScanResults = data.results;
     renderCleanup(data);
   } catch (err) {
+    clearInterval(pollTimer);
+    summary.innerHTML = '';
     showToast(`扫描失败: ${err.message}`, 'error');
   } finally {
     setLoading(btn, false);
@@ -552,8 +672,8 @@ function renderCleanup(data) {
       <td class="text-muted">${esc(formatDate(r.lastModified))}</td>
       <td><span class="badge ${r.type === 'pnpm' ? 'badge-dev' : 'badge-dep'}">${esc(r.type)}</span></td>
       <td>
-        <button class="btn btn-sm" onclick="inspectDir('${esc(r.path.replace(/\\/g, '/'))}')">详情</button>
-        <button class="btn btn-sm btn-danger" onclick="deleteSingle('${esc(r.path.replace(/\\/g, '/'))}')">删除</button>
+        <button class="btn btn-sm" data-action="inspect-dir" data-path="${esc(r.path)}">详情</button>
+        <button class="btn btn-sm btn-danger" data-action="delete-dir" data-path="${esc(r.path)}">删除</button>
       </td>
     </tr>
   `).join('');
@@ -716,7 +836,7 @@ async function loadOutdated() {
         <td class="text-red mono">${esc(pkg.current)}</td>
         <td class="text-yellow mono">${esc(pkg.wanted)}</td>
         <td class="text-green mono">${esc(pkg.latest)}</td>
-        <td><button class="btn btn-sm btn-primary" onclick="upgradePackage('${esc(pkg.name)}')">升级</button></td>
+        <td><button class="btn btn-sm btn-primary" data-action="upgrade" data-name="${esc(pkg.name)}">升级</button></td>
       </tr>
     `).join('');
   } catch (err) {
@@ -862,6 +982,8 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('pkg-search').addEventListener('keypress', (e) => {
     if (e.key === 'Enter') searchPackages();
   });
+  document.getElementById('residue-scan-btn').addEventListener('click', scanGlobalResidue);
+  document.getElementById('residue-delete-btn').addEventListener('click', deleteSelectedResidue);
 
   // Cache tab
   document.getElementById('cache-refresh-btn').addEventListener('click', loadCacheInfo);
@@ -886,16 +1008,28 @@ document.addEventListener('DOMContentLoaded', () => {
   loadGlobalPackages(); // preload global packages in background
 });
 
-// Expose functions for inline onclick handlers
-window.installPackage = installPackage;
-window.uninstallPackage = uninstallPackage;
-window.upgradePackage = upgradePackage;
-window.updatePackage = updatePackage;
-window.updateAllPackages = updateAllPackages;
-window.globalUninstallPackage = globalUninstallPackage;
-window.cleanCache = cleanCache;
-window.verifyCache = verifyCache;
-window.pruneStore = pruneStore;
-window.deleteSingle = deleteSingle;
-window.inspectDir = inspectDir;
+// Expose closeModal only (used by static modal markup). All dynamic buttons
+// use data-action delegation below, so no per-render global functions are needed.
 window.closeModal = closeModal;
+
+// === Action delegation ===
+// Dynamic buttons carry data-action + data-* payloads. Delegating from the
+// document avoids inline onclick handlers, where HTML-entity-escaped values
+// (&#39; etc.) get decoded back to quotes inside the attribute and could
+// break out of the JS string context (double-decoding XSS).
+document.addEventListener('click', (e) => {
+  const btn = e.target.closest('[data-action]');
+  if (!btn) return;
+  switch (btn.dataset.action) {
+    case 'install': installPackage(btn.dataset.name, btn.dataset.dev === '1'); break;
+    case 'uninstall': uninstallPackage(btn.dataset.name); break;
+    case 'upgrade': upgradePackage(btn.dataset.name); break;
+    case 'update': updatePackage(btn.dataset.name); break;
+    case 'global-uninstall': globalUninstallPackage(btn.dataset.name, btn.dataset.pm); break;
+    case 'clean-cache': cleanCache(btn.dataset.pm); break;
+    case 'verify-cache': verifyCache(btn.dataset.pm); break;
+    case 'prune-store': pruneStore(btn.dataset.pm); break;
+    case 'inspect-dir': inspectDir(btn.dataset.path); break;
+    case 'delete-dir': deleteSingle(btn.dataset.path); break;
+  }
+});

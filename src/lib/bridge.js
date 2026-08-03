@@ -21,8 +21,12 @@ export async function execCommand(command, cwd, timeout = 120000) {
     });
     return stdout.trim();
   } catch (err) {
-    // npm outdated returns exit code 1 when packages are outdated (not a real error)
-    if (err.stdout && (command.includes('outdated') || command.includes('ls'))) {
+    // npm/pnpm/yarn exit with code 1 for outdated/ls when there ARE findings
+    // (outdated packages, or missing/peer deps) — stdout still holds valid output.
+    // Exit code 2+ means a real failure (bad flag, missing command) → throw.
+    const expectedFindings = err.code === 1
+      && (command.includes('outdated') || /\b(?:ls|list)\b/.test(command));
+    if (expectedFindings && err.stdout) {
       return err.stdout.trim();
     }
     throw new Error(`Command failed: ${command}\n${err.stderr || err.message}`);

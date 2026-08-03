@@ -51,6 +51,15 @@ export async function scanNodeModules(rootDir, options = {}) {
     'tmp',
     'temp',
     'vendor',
+    // System dirs that never hold project node_modules and are huge (Windows/macOS)
+    'AppData',
+    '.local',
+    'Library',
+    'Windows',
+    'Program Files',
+    'Program Files (x86)',
+    'System Volume Information',
+    'System32',
     ...excludeDirs,
   ]);
 

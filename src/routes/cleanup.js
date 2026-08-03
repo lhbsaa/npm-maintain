@@ -1,17 +1,26 @@
-import { scanNodeModules, dirSize, formatSize, inspectNodeModules } from '../lib/scanner.js';
-import { rmSync, existsSync, statSync } from 'fs';
-import { join } from 'path';
+import { scanNodeModules, formatSize, inspectNodeModules } from '../lib/scanner.js';
+import { rm } from 'fs/promises';
+import { existsSync } from 'fs';
 import { homedir } from 'os';
 import { getAllCacheInfo, getAllGlobalInfo } from '../lib/cache.js';
+import { scanGlobalResidue, deleteGlobalResidue } from '../lib/global-cleanup.js';
+
+// In-memory progress of the most recent scan, polled by the UI.
+let scanProgress = null;
 
 // POST /api/cleanup/scan  { rootDir }
 async function scan(ctx) {
+  // Default to the user's home dir — matches the UI hint and the tool's
+  // purpose of finding stray node_modules across the filesystem.
   let rootDir = ctx.body.rootDir || homedir();
+  scanProgress = { rootDir, found: 0, current: '', running: true, startedAt: Date.now() };
   const results = await scanNodeModules(rootDir, {
     onProgress: (count, path) => {
-      // Could implement SSE for real-time updates later
+      scanProgress.found = count;
+      scanProgress.current = path;
     },
   });
+  scanProgress.running = false;
 
   // Sort by size descending
   results.sort((a, b) => b.size - a.size);
@@ -24,6 +33,11 @@ async function scan(ctx) {
     totalSizeFormatted: formatSize(totalSize),
     results: results.map(r => ({ ...r, sizeFormatted: formatSize(r.size) })),
   };
+}
+
+// GET /api/cleanup/scan-progress
+async function scanProgressHandler(ctx) {
+  return scanProgress || { running: false, found: 0, current: '', rootDir: '' };
 }
 
 // POST /api/cleanup/delete  { paths: [] }
@@ -49,7 +63,7 @@ async function deleteDirs(ctx) {
       continue;
     }
     try {
-      rmSync(p, { recursive: true, force: true });
+      await rm(p, { recursive: true, force: true });
       results.push({ path: p, success: true });
     } catch (err) {
       results.push({ path: p, success: false, error: err.message });
@@ -94,6 +108,20 @@ async function diskUsage(ctx) {
   };
 }
 
+// GET /api/cleanup/global-residue
+async function globalResidue(ctx) {
+  return scanGlobalResidue(ctx.targetDir);
+}
+
+// POST /api/cleanup/global-residue/delete  { items: [{ pm, kind, path }] }
+async function deleteGlobalResidueHandler(ctx) {
+  const items = ctx.body.items || [];
+  if (items.length === 0) return { error: 'No items specified' };
+  const { results } = await deleteGlobalResidue(ctx.targetDir, items);
+  const deleted = results.filter(r => r.success).length;
+  return { success: true, deleted, failed: results.length - deleted, results };
+}
+
 // POST /api/cleanup/inspect  { path }
 async function inspect(ctx) {
   const { path: nmPath } = ctx.body;
@@ -115,8 +143,11 @@ async function inspect(ctx) {
 
 export const cleanupRoutes = [
   { method: 'POST', pattern: '/api/cleanup/scan',       handler: scan },
+  { method: 'GET',  pattern: '/api/cleanup/scan-progress', handler: scanProgressHandler },
   { method: 'POST', pattern: '/api/cleanup/delete',     handler: deleteDirs },
   { method: 'POST', pattern: '/api/cleanup/inspect',    handler: inspect },
   { method: 'GET',  pattern: '/api/cleanup/globals',    handler: globals },
+  { method: 'GET',  pattern: '/api/cleanup/global-residue', handler: globalResidue },
+  { method: 'POST', pattern: '/api/cleanup/global-residue/delete', handler: deleteGlobalResidueHandler },
   { method: 'GET',  pattern: '/api/cleanup/disk-usage',  handler: diskUsage },
 ];
